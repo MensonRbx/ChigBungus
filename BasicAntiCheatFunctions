@@ -1,0 +1,103 @@
+local Players = game:GetService("Players")
+local DataStoreService = game:GetService("DataStoreService")
+local RunService = game:GetService("RunService")
+local ServerStorage = game:GetService("ServerStorage")
+
+local bannedPlayerList = DataStoreService:GetDataStore("BannedPlayerList")
+
+--Enums
+local HIGH_PRIORITY = Enum.RenderPriority.Last.Value + 1
+local FREEFALL_STATE = Enum.HumanoidStateType.Freefall
+
+local reasonTable = {
+	"Speed hacks",
+	"Jump hacks",
+	"Being on the ban list"
+}
+
+do
+	if not bannedPlayerList:GetAsync("BannedPlayers") then
+		bannedPlayerList:SetAsync("BannedPlayers", {})
+	end
+end
+
+local AntiCheatModule = {}
+AntiCheatModule.__index = AntiCheatModule
+
+function AntiCheatModule.new()
+	local self = setmetatable({}, AntiCheatModule)
+	
+	return self
+end
+
+function AntiCheatModule:PlayerAdded(player)
+	
+	if table.find(bannedPlayerList:GetAsync("BannedPlayers"), player) then
+		self:KickPlayer(player, 3)
+	end
+	
+	local onCharacterAdded = function(character)
+		self:CharacterAdded(player, character)
+	end
+	
+	player.CharacterAdded:Connect(onCharacterAdded)
+	
+end
+
+function AntiCheatModule:KickPlayer(player, num)
+	player:Kick("You are banned from this experience for "..reasonTable[num])
+end
+
+function AntiCheatModule:CharacterAdded(player, character)
+	
+	task.wait(5)
+	
+	local connection
+	local humanoid = character:WaitForChild("Humanoid")
+	local humanoidRootPartPosition = character:WaitForChild("HumanoidRootPart").Position
+	
+	local analyzePlayerMovement = function(dt)
+		self:AnalyzePlayerMovement(player, character, dt)
+	end
+	
+	local onPlayerDeath = function()
+		connection:Disconnect()
+	end
+	
+	character:SetAttribute("LastPlayerPositionXZ", Vector2.new(humanoidRootPartPosition.X, humanoidRootPartPosition.Z))
+	character:SetAttribute("LastPlayerPositionY", humanoidRootPartPosition.Y)
+	
+	connection = RunService.Heartbeat:Connect(analyzePlayerMovement)
+	humanoid.Died:Connect(onPlayerDeath)
+	
+end
+
+function AntiCheatModule:AnalyzePlayerMovement(player, character, dt)
+	
+	local humanoid = character.Humanoid
+	local humanoidRootPart = character.HumanoidRootPart
+	
+	local lastPlayerPositionXZ = character:GetAttribute("LastPlayerPositionXZ")
+	
+	local currentPlayerPositionXZ = Vector2.new(humanoidRootPart.Position.X, humanoidRootPart.Position.Z)
+	
+	--speed
+	local dxz = (currentPlayerPositionXZ - lastPlayerPositionXZ).Magnitude
+	local currentVelocity = dxz/dt
+	
+	if currentVelocity then
+		
+		if currentVelocity > 40 then
+			print(player.Name,"movement is suspicioius...", currentVelocity)
+			
+			if humanoid:GetState() ~= FREEFALL_STATE then
+				self:KickPlayer(player, 1)
+			end
+			
+		end
+	end
+
+	character:SetAttribute("LastPlayerPositionXZ", currentPlayerPositionXZ)
+end
+
+return AntiCheatModule.new()
